@@ -1,12 +1,10 @@
-#ifndef PRIORITY_QUEUE_H
-#define PRIORITY_QUEUE_H
+#ifndef PQ_H
+#define PQ_H
 
 #include "task.h"
 
-#define MAX_JOBS 1000
-
 typedef struct {
-    Job* jobs[MAX_JOBS];
+    Job* jobs[1000];
     int size;
 } PriorityQueue;
 
@@ -14,5 +12,10 @@ void initQueue(PriorityQueue* pq);
 void insertJob(PriorityQueue* pq, Job* job);
 Job* extractMin(PriorityQueue* pq);
 int isEmpty(PriorityQueue* pq);
+
+// Internal heap functions
+void heapifyDown(PriorityQueue* pq, int i);
+void heapifyUp(PriorityQueue* pq, int i);
+void swap(Job** a, Job** b);
 
 #endif

@@ -1,76 +1,40 @@
-#include <stdio.h>
 #include "resourceManager.h"
+#include "task.h"
+#include "priorityQueue.h"
+#include <stdio.h>
 
-// 🔹 reinsert for priority update
-void reinsertJob(PriorityQueue* pq, Job* job){
-
-    for(int i=0;i<pq->size;i++){
-        if(pq->jobs[i] == job){
-            pq->jobs[i] = pq->jobs[pq->size-1];
-            pq->size--;
-            heapifyDown(pq,i);
-            break;
-        }
-    }
-    insertJob(pq, job);
-}
-
-// 🔹 init
-void initResource(Resource* r, int id){
+void initResource(Resource* r, int id) {
     r->resourceId = id;
     r->isLocked = 0;
-    r->lockedBy = NULL;
+    r->ownerJob = NULL;
 }
 
-// 🔹 LOCK (PIP CORE)
-int lockResourcePIP(Resource* r, Job* job, PriorityQueue* pq){
-
-    // ✅ free → acquire
-    if(!r->isLocked){
+int lockResourcePIP(Resource* r, struct Job* requester, struct PriorityQueue* pq) {
+    Job* req = (Job*)requester;
+    if (!r->isLocked) {
         r->isLocked = 1;
-        r->lockedBy = job;
-
-        job->holdingResourceId = r->resourceId;
-        job->waitingResourceId = -1;
-        job->isBlocked = 0;
-
+        r->ownerJob = requester;
+        req->holdingResourceId = r->resourceId;
         return 1;
+    } else {
+        Job* owner = (Job*)r->ownerJob;
+        // Inheritance: Boost owner to requester's deadline
+        if (owner->currentPriority > req->currentPriority) {
+            owner->currentPriority = req->currentPriority;
+            owner->inheritedFromTask = req->taskId;
+        }
+        req->isBlocked = 1;
+        req->waitingResourceId = r->resourceId;
+        return 0;
     }
-
-    // ❌ already locked → BLOCK + PIP
-    Job* holder = r->lockedBy;
-
-    job->isBlocked = 1;
-    job->waitingResourceId = r->resourceId;
-
-    // 🔥 PIP CONDITION
-    if(holder->currentPriority > job->currentPriority){
-
-        // inherit priority
-        holder->currentPriority = job->currentPriority;
-        holder->inheritedFromTask = job->taskId;
-
-        // update position in ready queue
-        reinsertJob(pq, holder);
-    }
-
-    return 0;
 }
 
-// 🔹 UNLOCK
-void unlockResourcePIP(Resource* r, PriorityQueue* pq){
-
-    if(!r->isLocked) return;
-
-    Job* holder = r->lockedBy;
-
-    // 🔥 restore original priority
-    holder->currentPriority = holder->originalPriority;
-    holder->inheritedFromTask = -1;
-
-    // update queue again
-    reinsertJob(pq, holder);
-
+void unlockResourcePIP(Resource* r, struct PriorityQueue* pq) {
+    if (r->ownerJob == NULL) return;
+    Job* owner = (Job*)r->ownerJob;
+    owner->currentPriority = owner->originalPriority;
+    owner->inheritedFromTask = -1;
+    owner->holdingResourceId = -1;
     r->isLocked = 0;
-    r->lockedBy = NULL;
+    r->ownerJob = NULL;
 }

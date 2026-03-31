@@ -1,200 +1,170 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
-
 #include "edfScheduler.h"
 #include "priorityQueue.h"
-#include "task.h"
 #include "resourceManager.h"
 #include "blockedQueue.h"
+#include "task.h"
 
-// ---------- GCD / LCM ----------
-int gcd(int a,int b){ return b==0?a:gcd(b,a%b); }
-int lcm(int a,int b){ return (a*b)/gcd(a,b); }
+// --- Helpers ---
+int gcd(int a, int b) { return b == 0 ? a : gcd(b, a % b); }
+int lcm(int a, int b) { if (a == 0 || b == 0) return 0; return (a * b) / gcd(a, b); }
 
-int computeHyperperiod(Task t[],int n){
-    // printf("Computing hyperperiod...\n");
-    int h=t[0].period;
-    for(int i=1;i<n;i++) 
-    {
-        h=lcm(h,t[i].period);
-    }
-    printf("%d\n",h);
+int computeHyperperiod(Task t[], int n) {
+    if (n == 0) return 0;
+    int h = t[0].period;
+    for (int i = 1; i < n; i++) h = lcm(h, t[i].period);
     return h;
 }
 
-// ---------- NEXT RELEASE ----------
-int findNextReleaseTime(int time, Task tasks[], int n){
+int getNextReleaseTime(int currentTime, Task tasks[], int taskCount) {
     int next = INT_MAX;
-    for(int i=0;i<n;i++){
-        int k = (time / tasks[i].period) + 1;
-        int rel = k * tasks[i].period;
-        if(rel < next) next = rel;
+    for (int i = 0; i < taskCount; i++) {
+        int nextRel = ((currentTime / tasks[i].period) + 1) * tasks[i].period;
+        if (nextRel < next) next = nextRel;
     }
     return next;
 }
 
-// ---------- PRINT ----------
-void printGantt(int s,int e,Job* job,char* res){
-    if(job == NULL){
-        printf("%-5d %-5d %-6s %-6s\n",s,e,"IDLE","-");
-        return;
-    }
-    char name[10];
-    sprintf(name,"J%d%d",job->taskId,job->jobNumber);
-    printf("%-5d %-5d %-6s %-6s\n",s,e,name,res);
-}
-
-    
-void runEdfScheduler(Task tasks[], int taskCount, int resourceCount){
-        // printf("\nScheduler started\n");
-
+void runEdfScheduler(Task tasks[], int taskCount, int resourceCount, ProtocolType protocol) {
     int time = 0;
-    int hyper = computeHyperperiod(tasks,taskCount);
+    int hyper = computeHyperperiod(tasks, taskCount);
+    
+    PriorityQueue pq;
+    initQueue(&pq);
+    BlockedQueue bq;
+    initBlockedQueue(&bq);
+    
+    Resource resources[10];
+    for (int i = 0; i < resourceCount; i++) initResource(&resources[i], i + 1);
 
-            // printf("\nScheduler started\n");
+    int jobCount[10] = {0};
+    Job* currentJob = NULL; 
 
-    PriorityQueue pq; initQueue(&pq);
-    BlockedQueue bq; initBlockedQueue(&bq);
-            // printf("\nScheduler started\n");
+    printf("\n%-5s %-5s %-8s %-5s %-5s %-10s\n", "Start", "End", "Job", "Res", "Inh", "Deadline");
+    printf("----------------------------------------------------------\n");
 
-
-    Resource resources[5];
-    for(int i=0;i<resourceCount;i++)
-        initResource(&resources[i],i+1);
-                // printf("\nScheduler started\n");
-
-
-    int jobCount[100]={0};
-
-    printf("Start End  Job    Res\n");
-    printf("--------------------------\n");
-
-    while(time < hyper){
-        printf("Time: %d\n",time);
-        // 🔹 RELEASE JOBS
-        for(int i=0;i<taskCount;i++){
-            if(time % tasks[i].period == 0){
-
-                Job* job = malloc(sizeof(Job));
-
-                jobCount[i]++;
-                job->jobNumber = jobCount[i];
-                job->taskId = tasks[i].taskId;
-
-                job->remainingTime = tasks[i].executionTime;
-                job->executedTime = 0;
-
-                job->absoluteDeadline = time + tasks[i].deadline;
-                job->currentPriority = job->absoluteDeadline;
-
-                job->resourceIndex = 0;
-                job->holdingResourceId = -1;
-
-                insertJob(&pq, job);
-                // printf("inserted job J%d%d at time %d with deadline %d\n",job->taskId,job->jobNumber,time,job->absoluteDeadline);
+    while (time < hyper) {
+        // 1. ARRIVAL: Add new jobs to PQ
+        for (int i = 0; i < taskCount; i++) {
+            if (time % tasks[i].period == 0) {
+                Job* j = malloc(sizeof(Job));
+                j->taskId = tasks[i].taskId;
+                j->jobNumber = ++jobCount[i];
+                j->remainingTime = tasks[i].executionTime;
+                j->executedTime = 0;
+                j->absoluteDeadline = time + tasks[i].deadline;
+                j->currentPriority = j->absoluteDeadline;
+                j->originalPriority = j->absoluteDeadline;
+                j->holdingResourceId = -1;
+                j->waitingResourceId = -1;
+                j->resourceIndex = 0;
+                j->isBlocked = 0;
+                j->inheritedFromTask = -1;
+                insertJob(&pq, j);
             }
         }
 
-        // 🔹 UNBLOCK
         tryUnblockJobs(&bq, &pq, resources);
 
-        // 🔹 IDLE
-        if(isEmpty(&pq)){
-            int next = findNextReleaseTime(time,tasks,taskCount);
-            if(next <= time) next = time + 1;
-            printGantt(time,next,NULL,"-");
-            time = next;
+        // 2. SELECTION: Compare currentJob vs Best in PQ
+        if (currentJob == NULL || currentJob->remainingTime <= 0 || currentJob->isBlocked) {
+            currentJob = extractMin(&pq);
+        } else if (!isEmpty(&pq)) {
+            // ONLY PREEMPT IF THE NEW JOB HAS A STRICTLY SMALLER DEADLINE
+            if (pq.jobs[0]->currentPriority < currentJob->currentPriority) {
+                insertJob(&pq, currentJob); // Put current back
+                currentJob = extractMin(&pq); // Take the better one
+            }
+        }
+
+        // 3. IDLE
+        if (currentJob == NULL) {
+            int nextRel = getNextReleaseTime(time, tasks, taskCount);
+            if (nextRel > hyper) nextRel = hyper;
+            printf("%-5d %-5d %-8s %-5s %-5s %-10s\n", time, nextRel, "IDLE", "-", "-", "-");
+            time = nextRel;
             continue;
         }
 
-        // 🔹 PICK JOB
-        Job* job = extractMin(&pq);
-        Task* t = findTaskById(tasks,taskCount,job->taskId);
+        Task* t = findTaskById(tasks, taskCount, currentJob->taskId);
 
-        char res[10] = "-";
+        // 4. CALCULATE DURATION
+        int nextEvent = getNextReleaseTime(time, tasks, taskCount);
+        int finishTime = time + currentJob->remainingTime;
+        if (finishTime < nextEvent) nextEvent = finishTime;
 
-        // 🔥 COMPUTE NEXT EVENT CORRECTLY
-        int nextEvent = INT_MAX;
-
-        // 1. next release
-        int nextRelease = findNextReleaseTime(time,tasks,taskCount);
-        if(nextRelease > time && nextRelease < nextEvent)
-            nextEvent = nextRelease;
-
-        // 2. job finish
-        int finishTime = time + job->remainingTime;
-        if(finishTime < nextEvent)
-            nextEvent = finishTime;
-
-        // 3. resource events
-        if(job->resourceIndex < t->resourceCount){
-
-            ResourceUsage ru = t->resources[job->resourceIndex];
-
-            int startEvent = time + (ru.startTime - job->executedTime);
-            int endEvent   = time + ((ru.startTime + ru.duration) - job->executedTime);
-
-            if(startEvent > time && startEvent < nextEvent)
-                nextEvent = startEvent;
-
-            if(endEvent > time && endEvent < nextEvent)
-                nextEvent = endEvent;
+        if (currentJob->resourceIndex < t->resourceCount) {
+            ResourceUsage ru = t->resources[currentJob->resourceIndex];
+            int reqTime = time + (ru.startTime - currentJob->executedTime);
+            int relTime = time + (ru.startTime + ru.duration - currentJob->executedTime);
+            if (reqTime > time && reqTime < nextEvent) nextEvent = reqTime;
+            if (relTime > time && relTime < nextEvent) nextEvent = relTime;
         }
+        if (nextEvent > hyper) nextEvent = hyper;
 
-        // 🔥 SAFETY
-        if(nextEvent == INT_MAX || nextEvent <= time)
-            nextEvent = time + 1;
-
-        int runTime = nextEvent - time;
-
-        // 🔹 EXECUTE
-        job->remainingTime -= runTime;
-        job->executedTime += runTime;
-
-        // 🔹 RESOURCE ACQUIRE
-        if(job->resourceIndex < t->resourceCount){
-
-            ResourceUsage ru = t->resources[job->resourceIndex];
-
-            if(job->executedTime >= ru.startTime &&
-               job->holdingResourceId == -1){
-
-                if(!resources[ru.resourceId-1].isLocked){
-                    resources[ru.resourceId-1].isLocked = 1;
-                    resources[ru.resourceId-1].lockedBy = job;
-                    job->holdingResourceId = ru.resourceId;
+        // 5. LOCKING
+        if (currentJob->resourceIndex < t->resourceCount) {
+            ResourceUsage ru = t->resources[currentJob->resourceIndex];
+            if (currentJob->executedTime == ru.startTime && currentJob->holdingResourceId == -1) {
+                if (!lockResourcePIP(&resources[ru.resourceId - 1], (struct Job*)currentJob, (struct PriorityQueue*)&pq)) {
+                    addBlockedJob(&bq, currentJob);
+                    currentJob = NULL; // Trigger re-selection next loop
+                    continue; 
                 }
             }
         }
 
-        if(job->holdingResourceId != -1)
-            sprintf(res,"R%d",job->holdingResourceId);
+        // 6. EXECUTE
+        int duration = nextEvent - time;
+        char jobName[10]; 
+        sprintf(jobName, "J%d%d", currentJob->taskId, currentJob->jobNumber);
+        
+        // Temporary buffers for ID strings
+        char resIdStr[10];
+        char inhIdStr[10];
 
-        printGantt(time,nextEvent,job,res);
-
-        time = nextEvent;
-
-        // 🔹 RESOURCE RELEASE
-        if(job->resourceIndex < t->resourceCount){
-
-            ResourceUsage ru = t->resources[job->resourceIndex];
-
-            if(job->executedTime >= ru.startTime + ru.duration &&
-               job->holdingResourceId == ru.resourceId){
-
-                resources[ru.resourceId-1].isLocked = 0;
-                resources[ru.resourceId-1].lockedBy = NULL;
-
-                job->holdingResourceId = -1;
-                job->resourceIndex++;
-            }
+        // Convert Resource ID to string or "-"
+        if (currentJob->holdingResourceId != -1) {
+            sprintf(resIdStr, "%d", currentJob->holdingResourceId);
+        } else {
+            sprintf(resIdStr, "-");
         }
 
-        // 🔹 FINISH OR REINSERT
-        if(job->remainingTime > 0)
-            insertJob(&pq, job);
-        else
-            free(job);
+        // Convert Inherited Task ID to string or "-"
+        if (currentJob->inheritedFromTask != -1) {
+            sprintf(inhIdStr, "T%d", currentJob->inheritedFromTask);
+        } else {
+            sprintf(inhIdStr, "-");
+        }
+
+        // Final Corrected Print Statement
+        printf("%-5d %-5d %-8s %-5s %-5s %-10d\n", 
+               time, 
+               nextEvent, 
+               jobName, 
+               resIdStr, 
+               inhIdStr, 
+               currentJob->currentPriority);
+
+        currentJob->remainingTime -= duration;
+        currentJob->executedTime += duration;
+        time = nextEvent;
+
+        // 7. UNLOCK
+        if (currentJob->resourceIndex < t->resourceCount) {
+            ResourceUsage ru = t->resources[currentJob->resourceIndex];
+            if (currentJob->executedTime == (ru.startTime + ru.duration)) {
+                unlockResourcePIP(&resources[ru.resourceId - 1], (struct PriorityQueue*)&pq);
+                currentJob->resourceIndex++;
+            }
+        }
+        
+        // If finished, clear pointer so we pull a new one next time
+        if (currentJob->remainingTime <= 0) {
+            free(currentJob);
+            currentJob = NULL;
+        }
     }
 }

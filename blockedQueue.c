@@ -1,76 +1,45 @@
+#include "blockedQueue.h"
 #include <stdio.h>
-#include "resourceManager.h"
 
-// 🔹 reinsert for priority update
-void reinsertJob(PriorityQueue* pq, Job* job){
+void initBlockedQueue(BlockedQueue* bq) {
+    bq->size = 0;
+}
 
-    for(int i=0;i<pq->size;i++){
-        if(pq->jobs[i] == job){
-            pq->jobs[i] = pq->jobs[pq->size-1];
-            pq->size--;
-            heapifyDown(pq,i);
-            break;
+void addBlockedJob(BlockedQueue* bq, Job* job) {
+    if (bq->size < MAX_BLOCKED) {
+        job->isBlocked = 1;
+        bq->jobs[bq->size++] = job;
+    } else {
+        printf("Error: Blocked Queue Overflow!\n");
+    }
+}
+
+/**
+ * This is the "Wake Up" logic.
+ * It iterates through the blocked jobs and checks if the 
+ * resource they are waiting for (waitingResourceId) is now unlocked.
+ */
+void tryUnblockJobs(BlockedQueue* bq, PriorityQueue* pq, Resource resources[]) {
+    for (int i = 0; i < bq->size; i++) {
+        Job* job = bq->jobs[i];
+        int rid = job->waitingResourceId;
+
+        // Resource IDs are 1-based, so we check index rid-1
+        if (rid != -1 && !resources[rid - 1].isLocked) {
+            
+            // 1. Mark job as no longer blocked
+            job->isBlocked = 0;
+            job->waitingResourceId = -1;
+
+            // 2. Move it back to the Ready Queue (PriorityQueue)
+            insertJob(pq, job);
+
+            // 3. Remove from BlockedQueue (Swap with last element and decrement)
+            bq->jobs[i] = bq->jobs[bq->size - 1];
+            bq->size--;
+            
+            // 4. Since we swapped the current index, stay at 'i' to check the new element
+            i--; 
         }
     }
-    insertJob(pq, job);
-}
-
-// 🔹 init
-void initResource(Resource* r, int id){
-    r->resourceId = id;
-    r->isLocked = 0;
-    r->lockedBy = NULL;
-}
-
-// 🔹 LOCK (PIP CORE)
-int lockResourcePIP(Resource* r, Job* job, PriorityQueue* pq){
-
-    // ✅ free → acquire
-    if(!r->isLocked){
-        r->isLocked = 1;
-        r->lockedBy = job;
-
-        job->holdingResourceId = r->resourceId;
-        job->waitingResourceId = -1;
-        job->isBlocked = 0;
-
-        return 1;
-    }
-
-    // ❌ already locked → BLOCK + PIP
-    Job* holder = r->lockedBy;
-
-    job->isBlocked = 1;
-    job->waitingResourceId = r->resourceId;
-
-    // 🔥 PIP CONDITION
-    if(holder->currentPriority > job->currentPriority){
-
-        // inherit priority
-        holder->currentPriority = job->currentPriority;
-        holder->inheritedFromTask = job->taskId;
-
-        // update position in ready queue
-        reinsertJob(pq, holder);
-    }
-
-    return 0;
-}
-
-// 🔹 UNLOCK
-void unlockResourcePIP(Resource* r, PriorityQueue* pq){
-
-    if(!r->isLocked) return;
-
-    Job* holder = r->lockedBy;
-
-    // 🔥 restore original priority
-    holder->currentPriority = holder->originalPriority;
-    holder->inheritedFromTask = -1;
-
-    // update queue again
-    reinsertJob(pq, holder);
-
-    r->isLocked = 0;
-    r->lockedBy = NULL;
 }

@@ -3,6 +3,7 @@
 
 #include "task.h"
 
-int readInput(const char* fileName, Task tasks[], int* resourceCount);
+// parse input file
+void parseInput(char* filename, Task tasks[], int* taskCount, int* resourceCount);
 
 #endif

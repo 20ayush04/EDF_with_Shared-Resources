@@ -1,18 +1,27 @@
 #ifndef RESOURCE_MANAGER_H
 #define RESOURCE_MANAGER_H
 
-#include "task.h"
-#include "priorityQueue.h"
+// Forward declaration
+struct Job;
+struct PriorityQueue; 
+
+typedef enum {
+    PROTOCOL_NONE,
+    PROTOCOL_PIP,
+    PROTOCOL_PCP
+} ProtocolType;
 
 typedef struct {
     int resourceId;
     int isLocked;
-    Job* lockedBy;
+    struct Job* ownerJob; 
+    int priorityCeiling; 
 } Resource;
 
 void initResource(Resource* r, int id);
 
-int lockResourcePIP(Resource* r, Job* job, PriorityQueue* pq);
-void unlockResourcePIP(Resource* r, PriorityQueue* pq);
+// Use 'struct Job' and 'struct PriorityQueue' to avoid conflicting with the typedefs later
+int lockResourcePIP(Resource* r, struct Job* requester, struct PriorityQueue* pq);
+void unlockResourcePIP(Resource* r, struct PriorityQueue* pq);
 
 #endif
