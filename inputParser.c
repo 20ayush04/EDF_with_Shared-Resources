@@ -7,7 +7,7 @@ void parseInput(char* filename, Task tasks[], int* taskCount, int* resourceCount
     FILE* fp = fopen(filename, "r");
 
     if(fp == NULL){
-        printf("❌ Error opening file\n");
+        printf(" Error opening file\n");
         exit(1);
     }
 

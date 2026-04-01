@@ -12,8 +12,7 @@ void initQueue(PriorityQueue* pq) {
 void heapifyUp(PriorityQueue* pq, int i) {
     while (i > 0) {
         int p = (i - 1) / 2;
-        // TIE-BREAKER: Only swap if the child is STRICTLY better (smaller deadline)
-        // This keeps the older job (J11) at the top if J22 has the same deadline.
+       
         if (pq->jobs[i]->currentPriority < pq->jobs[p]->currentPriority) {
             swap(&pq->jobs[p], &pq->jobs[i]);
             i = p;
