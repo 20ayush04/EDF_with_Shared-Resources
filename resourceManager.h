@@ -3,6 +3,8 @@
 
 #include "task.h"
 
+typedef struct PriorityQueue PriorityQueue;
+typedef struct BlockedQueue BlockedQueue;
 
 typedef enum {
     PROTOCOL_NONE,
@@ -13,17 +15,18 @@ typedef enum {
 typedef struct Resource {
     int resourceId;
     int isLocked;
-    struct Job* ownerJob;  
+    Job* ownerJob;  
     int priorityCeiling;   
 } Resource;
 
-struct PriorityQueue;
-
 void initResource(Resource* r, int id);
 
-int lockResourcePIP(Resource* r, struct Job* requester, struct PriorityQueue* pq);
-void unlockResourcePIP(Resource* r, struct PriorityQueue* pq);
-int lockResourcePCP(Resource* resArray, int resCount, int targetIdx, struct Job* requester, struct PriorityQueue* pq);
-void unlockResourcePCP(Resource* r, struct PriorityQueue* pq);
+int lockResourcePIP(Resource* r, Job* requester, PriorityQueue* pq, BlockedQueue* bq);
+void unlockResourcePIP(Resource* r, PriorityQueue* pq);
+
+
+
+int lockResourcePCP(Resource* resArray, int resCount, int targetIdx, Job* requester, PriorityQueue* pq);
+void unlockResourcePCP(Resource* r, PriorityQueue* pq);
 
 #endif

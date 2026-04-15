@@ -1,9 +1,9 @@
 #include "resourceManager.h"
 #include "task.h"
 #include "priorityQueue.h"
+#include "blockedQueue.h"
 #include <stdio.h>
 #include <limits.h>
-
 
 void initResource(Resource* r, int id) {
     r->resourceId = id;
@@ -12,30 +12,31 @@ void initResource(Resource* r, int id) {
     r->priorityCeiling = INT_MAX; 
 }
 
-int lockResourcePIP(Resource* r, struct Job* requester, struct PriorityQueue* pq) {
+int lockResourcePIP(Resource* r, Job* requester, PriorityQueue* pq, BlockedQueue* bq){
     Job* req = (Job*)requester;
 
     if (!r->isLocked) {
-        // Resource is free, take it
         r->isLocked = 1;
         r->ownerJob = requester;
         req->holdingResourceId = r->resourceId;
         return 1;
     } else {
         Job* owner = (Job*)r->ownerJob;
+        printf("resource %d is locked by job %d%d, requester is job %d%d\n", r->resourceId, owner->taskId, owner->jobNumber, req->taskId, req->jobNumber);
         
         if (req->currentPriority < owner->currentPriority) {
             owner->currentPriority = req->currentPriority;
             owner->inheritedFromTask = req->taskId;
+            reheapifyJob(pq, owner->taskId, owner->jobNumber); 
         }
         
-        req->isBlocked = 1;
         req->waitingResourceId = r->resourceId;
-        return 0; // Lock failed
+        addBlockedJob(bq, req); 
+        return 0; 
     }
 }
 
-void unlockResourcePIP(Resource* r, struct PriorityQueue* pq) {
+void unlockResourcePIP(Resource* r, PriorityQueue* pq) {
     if (r->ownerJob == NULL) return;
     
     Job* owner = (Job*)r->ownerJob;
@@ -46,9 +47,12 @@ void unlockResourcePIP(Resource* r, struct PriorityQueue* pq) {
     
     r->isLocked = 0;
     r->ownerJob = NULL;
+
+    reheapifyJob(pq, owner->taskId, owner->jobNumber);
 }
 
-int lockResourcePCP(Resource* resArray, int resCount, int targetIdx, struct Job* requester, struct PriorityQueue* pq) {
+// Fixed arguments to use PriorityQueue* instead of struct PriorityQueue*
+int lockResourcePCP(Resource* resArray, int resCount, int targetIdx, Job* requester, PriorityQueue* pq) {
     Job* req = (Job*)requester;
     Resource* target = &resArray[targetIdx];
 
@@ -57,6 +61,7 @@ int lockResourcePCP(Resource* resArray, int resCount, int targetIdx, struct Job*
         if (req->currentPriority < owner->currentPriority) {
             owner->currentPriority = req->currentPriority;
             owner->inheritedFromTask = req->taskId;
+            reheapifyJob(pq, owner->taskId, owner->jobNumber);
         }
         req->isBlocked = 1;
         return 0;
@@ -74,10 +79,9 @@ int lockResourcePCP(Resource* resArray, int resCount, int targetIdx, struct Job*
         }
     }
 
-   
     if (req->currentPriority < highestSystemCeiling || (ceilingOwner == req)) {
         target->isLocked = 1;
-        target->ownerJob = (struct Job*)requester;
+        target->ownerJob = requester;
         req->holdingResourceId = target->resourceId;
         return 1;
     } else {
@@ -90,6 +94,7 @@ int lockResourcePCP(Resource* resArray, int resCount, int targetIdx, struct Job*
     }
 }
 
-void unlockResourcePCP(Resource* r, struct PriorityQueue* pq) {
+// Fixed arguments to use PriorityQueue* instead of struct PriorityQueue*
+void unlockResourcePCP(Resource* r, PriorityQueue* pq) {
     unlockResourcePIP(r, pq);
 }

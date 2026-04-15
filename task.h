@@ -26,6 +26,7 @@ typedef struct {
     int currentPriority;     
     int originalPriority;    
     int holdingResourceId;  
+    int resourceHoldTime;
     int waitingResourceId;   
     int resourceIndex;       
     int isBlocked;           

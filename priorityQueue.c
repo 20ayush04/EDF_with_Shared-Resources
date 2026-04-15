@@ -2,7 +2,9 @@
 #include <stddef.h>
 
 void swap(Job** a, Job** b) {
-    Job* t = *a; *a = *b; *b = t;
+    Job* t = *a; 
+    *a = *b; 
+    *b = t;
 }
 
 void initQueue(PriorityQueue* pq) {
@@ -12,7 +14,6 @@ void initQueue(PriorityQueue* pq) {
 void heapifyUp(PriorityQueue* pq, int i) {
     while (i > 0) {
         int p = (i - 1) / 2;
-       
         if (pq->jobs[i]->currentPriority < pq->jobs[p]->currentPriority) {
             swap(&pq->jobs[p], &pq->jobs[i]);
             i = p;
@@ -40,9 +41,11 @@ void heapifyDown(PriorityQueue* pq, int i) {
 }
 
 void insertJob(PriorityQueue* pq, Job* job) {
-    pq->jobs[pq->size] = job;
-    heapifyUp(pq, pq->size);
-    pq->size++;
+    if (pq->size < 1000) {
+        pq->jobs[pq->size] = job;
+        heapifyUp(pq, pq->size);
+        pq->size++;
+    }
 }
 
 Job* extractMin(PriorityQueue* pq) {
@@ -51,6 +54,28 @@ Job* extractMin(PriorityQueue* pq) {
     pq->jobs[0] = pq->jobs[--pq->size];
     heapifyDown(pq, 0);
     return j;
+}
+
+void removeJob(PriorityQueue* pq, int taskId, int jobNumber) {
+    for(int i = 0; i < pq->size; i++) {
+        if(pq->jobs[i]->taskId == taskId && pq->jobs[i]->jobNumber == jobNumber) {
+            pq->jobs[i] = pq->jobs[--pq->size];
+            // Added both to maintain heap property regardless of the value moved
+            heapifyUp(pq, i);
+            heapifyDown(pq, i);
+            break;
+        }
+    }
+}
+
+void reheapifyJob(PriorityQueue* pq, int taskId, int jobNumber) {
+    for(int i = 0; i < pq->size; i++) {
+        if(pq->jobs[i]->taskId == taskId && pq->jobs[i]->jobNumber == jobNumber) {
+            heapifyUp(pq, i);
+            heapifyDown(pq, i);
+            break;
+        }
+    }
 }
 
 int isEmpty(PriorityQueue* pq) {
